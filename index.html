@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Capex Tracker</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --bg: #EBEAE6;
+    --bg-raised: #F4F3F0;
+    --paper: #FFFFFF;
+    --ink: #1A1A1A;
+    --ink-2: #55534E;
+    --ink-3: #8A8781;
+    --rule: #D6D4CE;
+    --accent: #D9331F;
+    --green: #3AB319;
+    --g1: #1A1A1A; --g2: #55534E; --g3: #8A8781; --g4: #B5B2AB; --g5: #D6D4CE;
+    --tip-bg: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --bg: #171614;
+      --bg-raised: #211F1C;
+      --paper: #211F1C;
+      --ink: #E8E6E1;
+      --ink-2: #A29E96;
+      --ink-3: #8A8781;
+      --rule: #3A3733;
+      --green: #3AB319;
+      --g1: #E8E6E1; --g2: #B5B2AB; --g3: #8A8781; --g4: #5E5B55; --g5: #3A3733;
+      --tip-bg: #211F1C;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --bg: #171614; --bg-raised: #211F1C; --paper: #211F1C;
+    --ink: #E8E6E1; --ink-2: #A29E96; --ink-3: #8A8781; --rule: #3A3733;
+    --green: #3AB319;
+    --g1: #E8E6E1; --g2: #B5B2AB; --g3: #8A8781; --g4: #5E5B55; --g5: #3A3733;
+    --tip-bg: #211F1C;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body.viz-root {
+    font-family: "Helvetica Neue", Helvetica, Inter, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    padding: 64px 24px 96px;
+  }
+  .mono { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+
+  .kicker {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  .label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  header.page h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; margin-top: 8px; }
+  header.page .dateline { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  header.page { padding-bottom: 24px; border-bottom: 1px solid var(--ink); }
+
+  section.major { padding-top: 96px; }
+  section.major > .section-head { border-top: 1px solid var(--rule); padding-top: 16px; }
+  section.major h2 { font-size: 25px; font-weight: 600; line-height: 1.2; margin-top: 4px; }
+  .section-sub { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-top: 8px; max-width: 70ch; }
+
+  /* KPI row — open blocks with left rules */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 32px 24px; margin-top: 48px; }
+  .stat { border-left: 1px solid var(--rule); padding-left: 16px; }
+  .stat .lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+  .stat .val { font-size: 48px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin-top: 8px; }
+  .stat .val sup { font-size: 40%; font-weight: 700; vertical-align: super; }
+  .stat .delta { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-size: 13px; margin-top: 8px; color: var(--green); }
+  .stat .note { font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-top: 4px; }
+
+  .fig { margin-top: 48px; }
+  .fig-head h3 { font-size: 19px; font-weight: 600; line-height: 1.2; }
+  .fig-sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; max-width: 70ch; }
+  .fig-caption { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
+  .legend .li { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+  .legend .sw { width: 12px; height: 12px; display: inline-block; }
+  svg { display: block; width: 100%; height: auto; margin-top: 16px; }
+  svg text { font-family: "Helvetica Neue", Helvetica, Inter, Arial, sans-serif; }
+  svg text.n { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 48px 24px; }
+  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .tooltip {
+    position: fixed; z-index: 30; pointer-events: none; display: none;
+    background: var(--tip-bg); border: 1px solid var(--ink);
+    padding: 12px 16px; font-size: 13px; min-width: 170px;
+  }
+  .tooltip .t-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .tooltip .t-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .tooltip .t-key { width: 12px; height: 3px; }
+  .tooltip .t-name { color: var(--ink-2); font-size: 13px; }
+  .tooltip .t-val { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-weight: 400; color: var(--ink); margin-left: auto; padding-left: 16px; }
+
+  details.tablewrap { margin-top: 16px; }
+  details.tablewrap summary { cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+  table.data { border-collapse: collapse; width: 100%; margin-top: 16px; }
+  table.data th { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid var(--ink); padding: 12px 12px; text-align: right; }
+  table.data td { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-size: 13px; border-bottom: 1px solid var(--rule); padding: 13px 12px; text-align: right; }
+  table.data th:first-child, table.data td:first-child { text-align: left; padding-left: 0; }
+
+  ul.deals { list-style: none; margin-top: 16px; }
+  ul.deals li { padding: 16px 0; border-bottom: 1px solid var(--rule); }
+  ul.deals li:last-child { border-bottom: none; }
+  ul.deals .d-head { font-weight: 600; font-size: 16px; line-height: 1.4; }
+  ul.deals .d-sub { color: var(--ink-2); font-size: 13px; line-height: 1.5; margin-top: 2px; }
+  .fig-note { font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-top: 16px; max-width: 70ch; }
+
+  .catalysts { margin-top: 16px; }
+  .catalysts .c-row { display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+  .catalysts .c-row:last-child { border-bottom: none; }
+  .catalysts .c-date { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; font-size: 13px; color: var(--ink-2); min-width: 140px; }
+  .catalysts .c-what { font-size: 16px; }
+
+  .foot { margin-top: 96px; border-top: 1px solid var(--rule); padding-top: 24px; font-size: 13px; color: var(--ink-3); }
+  .foot h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin: 24px 0 8px; }
+  .foot a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+  .foot ol { margin-left: 18px; }
+  .foot li { margin-top: 4px; line-height: 1.5; }
+</style>
+</head>
+<body class="viz-root">
+<div class="wrap">
+  <header class="page">
+    <div class="kicker">Market research — weekly tracker</div>
+    <h1>AI capex</h1>
+    <div class="dateline">Data as of 2026-08-15 · hyperscalers / semis &amp; hardware / neoclouds / power &amp; datacenters · refreshed weekly</div>
+  </header>
+
+  <div class="fig" style="margin-top:48px">
+    <div class="fig-head"><h3>The decade — big-4 capex, 2016–2026E</h3></div>
+    <div class="fig-sub">Annual capital expenditure, Microsoft + Amazon + Alphabet + Meta, $B. Dashed segment is 2026 guidance.</div>
+    <div id="chart-decade"></div>
+    <div class="fig-caption">Fig. 01 — 2016–2024 cash capex per filings; 2025 actual and 2026E on management-quoted bases (Microsoft incl. finance leases). Hover any year for the split.</div>
+    <details class="tablewrap">
+      <summary>Table view</summary>
+      <table class="data" id="table-decade"></table>
+    </details>
+  </div>
+
+  <div class="kpis">
+    <div class="stat">
+      <div class="lbl">Big-4 2026 guided capex</div>
+      <div class="val">$730<sup>B</sup></div>
+      <div class="delta">+78% vs 2025 (~$410B)</div>
+      <div class="note">Sum of current guidance midpoints, MSFT + AMZN + GOOGL + META</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Big-4 capex, Q2 2026</div>
+      <div class="val">$170<sup>B</sup></div>
+      <div class="delta">+79% vs Q2 2025</div>
+      <div class="note">Single-quarter record</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Nvidia DC revenue, FQ1 27</div>
+      <div class="val">$75.2<sup>B</sup></div>
+      <div class="delta">+92% YoY</div>
+      <div class="note">Feb–Apr 2026 · next print 26 Aug 2026</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Global DC capex, 2026E</div>
+      <div class="val">$1.0<sup>T+</sup></div>
+      <div class="delta">2025 grew +57% YoY</div>
+      <div class="note">Dell'Oro; Morgan Stanley sees $805B hyperscaler-only</div>
+    </div>
+  </div>
+
+  <section class="major">
+    <div class="section-head">
+      <div class="label">01 — Hyperscalers</div>
+      <h2>The demand side</h2>
+      <div class="section-sub">Quarterly capital expenditure incl. finance leases, calendar quarters. Oracle excluded from the stack (offset fiscal quarters — see guidance).</div>
+    </div>
+
+    <div class="fig">
+      <div class="fig-head"><h3>Big-4 quarterly capex</h3></div>
+      <div class="fig-sub">$B per calendar quarter, Q1 2025 – Q2 2026</div>
+      <div class="legend" id="legend-stack"></div>
+      <div id="chart-stack"></div>
+      <div class="fig-caption">Fig. 02 — Stacked; totals labeled. Hover any column for the split.</div>
+      <details class="tablewrap">
+        <summary>Table view</summary>
+        <table class="data" id="table-stack"></table>
+      </details>
+    </div>
+
+    <div class="fig">
+      <div class="fig-head"><h3>2026 guidance — first guide vs. now</h3></div>
+      <div class="fig-sub">Company guidance for calendar 2026 (midpoint of range), $B. Every company has raised at least once; Microsoft's move is an accounting restatement, not a cut.</div>
+      <div class="legend">
+        <span class="li"><span class="sw" style="border:1px solid var(--ink);background:transparent"></span>First 2026 guide</span>
+        <span class="li"><span class="sw" style="background:var(--ink)"></span>Current guide</span>
+      </div>
+      <div id="chart-dumbbell"></div>
+      <div class="fig-caption">Fig. 03 — Filled marks are current guidance.</div>
+      <div class="fig-note">Microsoft guided ~$190B in April, restated to ~$175B in July on a lease reclassification and useful-life change — underlying buildout unchanged. Oracle (May fiscal year-end): FY2027 gross capex guided at $90–95B, ~$70B net of customer prepayments, after $55.7B in FY2026 (2.6× FY2025).</div>
+    </div>
+  </section>
+
+  <section class="major">
+    <div class="section-head">
+      <div class="label">02 — Semis &amp; hardware</div>
+      <h2>The supply side</h2>
+      <div class="section-sub">Nvidia data center revenue is the cleanest single proxy for global AI infrastructure spend; Broadcom AI revenue tracks the custom-accelerator build.</div>
+    </div>
+    <div class="grid-2">
+      <div class="fig">
+        <div class="fig-head"><h3>Nvidia data center revenue</h3></div>
+        <div class="fig-sub">$B per fiscal quarter (FY ends late Jan)</div>
+        <div id="chart-nvda"></div>
+        <div class="fig-caption">Fig. 04 — FQ1 27 = Feb–Apr 2026.</div>
+      </div>
+      <div class="fig">
+        <div class="fig-head"><h3>Broadcom AI semiconductor revenue</h3></div>
+        <div class="fig-sub">$B per fiscal quarter (FY ends ~Oct) · FQ3 26 is guidance</div>
+        <div id="chart-avgo"></div>
+        <div class="fig-caption">Fig. 05 — Hatched column = company guidance.</div>
+      </div>
+    </div>
+    <div class="fig">
+      <div class="fig-head"><h3>2026 capex budgets — chipmakers &amp; memory</h3></div>
+      <div class="fig-sub">Announced capital spending plans, $B</div>
+      <div id="chart-semicapex"></div>
+      <div class="fig-caption">Fig. 06 — Announced plans; bases differ (see notes).</div>
+      <div class="fig-note">TSMC raised its 2026 budget twice ($52–56B → $60–64B, July); Micron lifted FY26 to ~$27B from ~$20B; Samsung's ₩110T (~$73B) figure combines semiconductor capex + R&amp;D; SK Hynix's ₩54T (~$38B) covers two new fabs (Yongin Y2 HBM/DRAM + Cheongju M17 NAND) spending into 2029.</div>
+    </div>
+  </section>
+
+  <section class="major">
+    <div class="section-head">
+      <div class="label">03 — Neoclouds</div>
+      <h2>The AI middle layer</h2>
+      <div class="section-sub">GPU-cloud specialists renting AI compute to labs and hyperscalers. The two public names alone plan $55–64B of 2026 capex.</div>
+    </div>
+    <div class="fig">
+      <div class="fig-head"><h3>CoreWeave &amp; Nebius quarterly capex</h3></div>
+      <div class="fig-sub">$B per calendar quarter · CoreWeave FY26 guide raised to $35–39B (from $30–35B) at Q2; Nebius reiterated $20–25B</div>
+      <div class="legend">
+        <span class="li"><span class="sw" style="background:var(--g1)"></span>CoreWeave</span>
+        <span class="li"><span class="sw" id="sw-hatch"></span>Nebius</span>
+      </div>
+      <div id="chart-neocloud"></div>
+      <div class="fig-caption">Fig. 07 — Solid = CoreWeave, hatched = Nebius.</div>
+      <details class="tablewrap">
+        <summary>Table view</summary>
+        <table class="data" id="table-neocloud"></table>
+      </details>
+      <div class="fig-note">CoreWeave figures are press-release cash capex (purchases of P&amp;E); management quotes a broader committed basis (~$9.4B in Q2 26) and guides on it. Nebius Q3 25 and CoreWeave Q1 26 are derived from period disclosures.</div>
+    </div>
+    <div class="grid-2">
+      <div class="fig">
+        <div class="fig-head"><h3>Contracted demand — the order books</h3></div>
+        <ul class="deals">
+          <li><span class="d-head">CoreWeave revenue backlog: $104B (+246% YoY)</span><br><span class="d-sub">All four major AI labs signed: OpenAI ~$22.4B, Meta $35B, Microsoft, Anthropic &amp; Google (undisclosed); 4.2 GW contracted power</span></li>
+          <li><span class="d-head">Nebius customer commitments: &gt;$40B</span><br><span class="d-sub">Microsoft up to $19.4B through 2031; Meta $12B firm + up to $15B optional; ARR $3.0B (+598% YoY); 5 GW contracted power targeted by YE26</span></li>
+          <li><span class="d-head">Q2 26 prints: CRWV +19%, NBIS +34%</span><br><span class="d-sub">Both beat; CoreWeave revenue $2.6B (+112%), Nebius $582M (+454%)</span></li>
+        </ul>
+      </div>
+      <div class="fig">
+        <div class="fig-head"><h3>Private neoclouds</h3></div>
+        <ul class="deals">
+          <li><span class="d-head">Crusoe: raising ~$3B at ~$30B valuation</span><br><span class="d-sub">In talks (Jul 26), 3× its Oct 25 mark; 2.1 GW Abilene campus (Stargate + new 900 MW Microsoft tranche); &gt;45 GW power pipeline</span></li>
+          <li><span class="d-head">Lambda: $1.5B raised, IPO targeted H2 2026</span><br><span class="d-sub">Multi-billion Microsoft capacity deal; 3 GW promised by 2030</span></li>
+          <li><span class="d-head">Together AI: $800M at $8.3B valuation</span><br><span class="d-sub">Jul 26, Nvidia-backed; inference-focused</span></li>
+          <li><span class="d-head">Sector revenue run-rate: ~$48B annualized</span><br><span class="d-sub">Mid-2026 estimate; seen reaching ~$300B by 2030</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="major">
+    <div class="section-head">
+      <div class="label">04 — Power &amp; datacenters</div>
+      <h2>The physical layer</h2>
+      <div class="section-sub">Mega-campuses, grid and generation commitments tied to AI demand.</div>
+    </div>
+    <div class="fig">
+      <div class="fig-head"><h3>Announced AI datacenter mega-projects</h3></div>
+      <div class="fig-sub">Total announced commitment per project, $B — multi-year, not annual capex</div>
+      <div class="legend">
+        <span class="li"><span class="sw" style="background:var(--g1)"></span>Committed / under way</span>
+        <span class="li"><span class="sw" id="sw-hatch2"></span>Announced / in talks</span>
+      </div>
+      <div id="chart-projects"></div>
+      <div class="fig-caption">Fig. 08 — Hatched = in negotiation, not signed.</div>
+      <div class="fig-note">OpenAI's total disclosed compute commitments across all partners now approach ~$1.4T through 2030 (incl. ~$300B Oracle). The Nvidia–OpenAI Piketon, Ohio complex (~$500B incl. chips, 10 GW) was in negotiation as of late July 2026 — only the 20-year site lease is signed.</div>
+    </div>
+    <div class="grid-2">
+      <div class="fig">
+        <div class="fig-head"><h3>Power &amp; grid signals</h3></div>
+        <ul class="deals">
+          <li><span class="d-head">GE Vernova gas-turbine backlog: 116 GW</span><br><span class="d-sub">Up from 100 GW in Q1 26; taking reservations for 2031 delivery; ~20% of gas customers are datacenters</span></li>
+          <li><span class="d-head">Siemens Energy: record ~$20B quarterly orders</span><br><span class="d-sub">Total backlog ~€154B; grid backlog record €51B on transformer demand</span></li>
+          <li><span class="d-head">US utility capex: ~$1.3T over 2026–2030</span><br><span class="d-sub">S&amp;P Global; Duke alone plans ~$103B with ~14 GW of datacenter-driven load; Dominion's Virginia DC pipeline ~40 GW</span></li>
+          <li><span class="d-head">Meta nuclear slate: up to 6.6 GW by 2035</span><br><span class="d-sub">Vistra existing fleet + TerraPower Natrium (2.8 GW) + Oklo Aurora, powering the Prometheus supercluster</span></li>
+        </ul>
+      </div>
+      <div class="fig">
+        <div class="fig-head"><h3>Datacenter REITs — 2026 build spend</h3></div>
+        <ul class="deals">
+          <li><span class="d-head">Equinix: $5.0–6.0B capex guided for 2026</span><br><span class="d-sub">52 projects in 33 markets; long-term 2027–29 capex raised to $5–7B/yr from $3–4B/yr</span></li>
+          <li><span class="d-head">Digital Realty: $4.25–4.75B development capex</span><br><span class="d-sub">Record $1.9B annualized GAAP rent backlog; 2026 outlook raised in July</span></li>
+          <li><span class="d-head">Anthropic: $50B US datacenter program</span><br><span class="d-sub">With Fluidstack; first sites Texas &amp; New York</span></li>
+          <li><span class="d-head">Dell'Oro long-range: $1.7T global DC capex by 2030</span><br><span class="d-sub">McKinsey sees $6.7T cumulative buildout needed by 2030 ($5.2T AI-specific)</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="major">
+    <div class="section-head">
+      <div class="label">05 — Watch next</div>
+      <h2>Catalysts</h2>
+    </div>
+    <div class="catalysts">
+      <div class="c-row"><span class="c-date">2026-08-26</span><span class="c-what">Nvidia FQ2 27 earnings</span></div>
+      <div class="c-row"><span class="c-date">early Sep</span><span class="c-what">Broadcom FQ3 26</span></div>
+      <div class="c-row"><span class="c-date">mid Sep</span><span class="c-what">Oracle FY27 Q1</span></div>
+      <div class="c-row"><span class="c-date">late Sep</span><span class="c-what">Micron FY26 Q4</span></div>
+      <div class="c-row"><span class="c-date">mid Oct</span><span class="c-what">TSMC Q3</span></div>
+      <div class="c-row"><span class="c-date">late Oct</span><span class="c-what">Big-4 hyperscaler Q3 prints</span></div>
+      <div class="c-row"><span class="c-date">early Nov</span><span class="c-what">CoreWeave &amp; Nebius Q3</span></div>
+      <div class="c-row"><span class="c-date">H2 2026</span><span class="c-what">Lambda IPO · Nvidia–OpenAI Ohio signing status</span></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <h3>Methodology &amp; caveats</h3>
+    <ol>
+      <li>Microsoft series is management-quoted capex incl. finance leases, mapped to calendar quarters (FY ends June). July 2026 lease reclassification lowers the headline ~$15B without changing underlying spend.</li>
+      <li>Amazon figures are net cash capex (purchases of PP&amp;E); gross incl. finance leases runs ~$1–2B higher per quarter.</li>
+      <li>Guidance midpoints used where companies guide ranges: Alphabet $195–205B, Meta $130–145B, Micron ~$27B (FY26), TSMC $60–64B.</li>
+      <li>Nvidia and Broadcom report on offset fiscal calendars; quarters are labeled fiscally with calendar coverage noted.</li>
+      <li>Samsung's 2026 figure includes R&amp;D and is from secondary reporting; SK Hynix does not disclose a single annual capex number.</li>
+      <li>Mega-project figures are announced commitments, usually multi-year — not annual capex, and not directly comparable to company capex lines.</li>
+      <li>Decade chart (Fig. 01): 2016–2024 are cash capex per company filings (Microsoft mapped to calendar years; Amazon net of finance leases; Meta incl. finance-lease payments from 2019). 2025 actual and 2026E use the tracker's management-quoted bases, so the 2024→2025 step includes a modest basis shift (~5–8%) alongside the real acceleration.</li>
+      <li>CoreWeave quarterly series is press-release cash capex; its $35–39B FY26 guidance is on a broader committed basis (Q2 26: $9.4B committed vs $6.4B cash). Crusoe's ~$30B valuation round and Lambda's pre-IPO raise are reported/in-talks, not closed.</li>
+    </ol>
+    <h3>Key sources</h3>
+    <ol>
+      <li>Company earnings releases &amp; filings: <a href="https://www.sec.gov/Archives/edgar/data/1652044/000165204426000012/googexhibit991q42025.htm">Alphabet</a>, <a href="https://www.sec.gov/Archives/edgar/data/1018724/000101872426000002/amzn-20251231xex991.htm">Amazon</a>, <a href="https://www.prnewswire.com/news-releases/meta-reports-second-quarter-2026-results-302838214.html">Meta Q2'26</a>, <a href="https://investor.oracle.com/investor-news/news-details/2026/Oracle-Announces-Record-Q4-and-FY-2026-Results-Driven-by-Cloud-Infrastructure--Cloud-Applications/default.aspx">Oracle FY26</a>, <a href="https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-First-Quarter-Fiscal-2027/default.aspx">Nvidia FQ1'27</a>, <a href="https://www.prnewswire.com/news-releases/broadcom-inc-announces-second-quarter-fiscal-year-2026-financial-results-and-quarterly-dividend-302790698.html">Broadcom FQ2'26</a>, <a href="https://investor.tsmc.com/english/quarterly-results">TSMC</a>, <a href="https://news.skhynix.com/en/fab-facility-investment-2026/">SK Hynix</a>, <a href="https://www.globenewswire.com/news-release/2026/06/24/3317151/14450/en/micron-technology-inc-reports-record-results-for-the-third-quarter-of-fiscal-2026.html">Micron FQ3'26</a>, <a href="https://investors.coreweave.com/news/news-details/2026/CoreWeave-Reports-Strong-Second-Quarter-2026-Results/default.aspx">CoreWeave Q2'26</a>, <a href="https://nebius.com/newsroom/nebius-reports-second-quarter-2026-financial-results">Nebius Q2'26</a></li>
+      <li>Guidance &amp; commentary: <a href="https://www.cnbc.com/2026/07/29/microsoft-msft-q4-earnings-report-2026.html">CNBC — Microsoft Q4</a>, <a href="https://www.cnbc.com/2026/07/30/amazon-amzn-q2-earnings-report-2026.html">CNBC — Amazon Q2</a>, <a href="https://www.cnbc.com/2026/07/22/google-earnings-q2-goog-live-updates.html">CNBC — Alphabet Q2</a>, <a href="https://www.cnbc.com/2026/04/29/microsoft-msft-q3-earnings-report-2026.html">CNBC — Microsoft $190B plan</a></li>
+      <li>Projects &amp; power: <a href="https://epochai.substack.com/p/openai-stargate-where-the-us-sites">Epoch AI — Stargate site tracker</a>, <a href="https://www.aljazeera.com/economy/2026/7/27/nvidia-plans-250bn-push-to-bolster-openais-infrastructure-ambitions">Al Jazeera — Nvidia/OpenAI Ohio</a>, <a href="https://www.cnbc.com/2026/07/13/meta-louisiana-data-center-investment-reaches-50-billion-amid-ai-push.html">CNBC — Meta Hyperion</a>, <a href="https://about.fb.com/news/2026/01/meta-nuclear-energy-projects-power-american-ai-leadership/">Meta — nuclear projects</a>, <a href="https://www.utilitydive.com/news/ge-vernova-gas-turbine-backlog-climbs-to-116-gw/826039/">Utility Dive — GE Vernova</a>, <a href="https://www.spglobal.com/market-intelligence/en/news-insights/research/2026/04/surging-energy-demand-puts-us-utility-capex-forecast-near-1-3t-in-2026-30">S&amp;P Global — utility capex</a>, <a href="https://www.anthropic.com/news/anthropic-invests-50-billion-in-american-ai-infrastructure">Anthropic — $50B program</a></li>
+      <li>Industry estimates: <a href="https://www.delloro.com/news/ai-boom-drives-data-center-capex-to-1-7-trillion-by-2030/">Dell'Oro</a>, <a href="https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-cost-of-compute-a-7-trillion-dollar-race-to-scale-data-centers">McKinsey</a>, <a href="https://newsroom.equinix.com/2026-07-29-Equinix-Reports-Second-Quarter-Results,-Raises-2026-Guidance-and-Long-Term-Outlook">Equinix Q2'26</a>, <a href="https://investor.digitalrealty.com/news-releases/news-release-details/digital-realty-reports-second-quarter-2026-results">Digital Realty Q2'26</a></li>
+    </ol>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+(function () {
+  var css = function (v) { return getComputedStyle(document.body).getPropertyValue(v).trim(); };
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var tooltip = document.getElementById("tooltip");
+  var patternCount = 0;
+
+  // ---------- data ----------
+  var decadeYears = ["2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026E"];
+  var decade = {
+    companies: [
+      { name: "Microsoft", vals: [9.1, 8.7, 14.2, 13.5, 17.6, 23.2, 24.8, 35.2, 55.6, 118.0, 175] },
+      { name: "Amazon",    vals: [6.7, 10.1, 11.3, 12.7, 35.0, 55.4, 58.3, 48.1, 77.7, 128.3, 220] },
+      { name: "Alphabet",  vals: [10.2, 13.2, 25.1, 23.5, 22.3, 24.6, 31.5, 32.3, 52.5, 91.4, 200] },
+      { name: "Meta",      vals: [4.5, 6.7, 13.9, 15.7, 15.7, 19.2, 32.0, 28.1, 39.2, 72.2, 137.5] }
+    ],
+    totals: [30.5, 38.7, 64.6, 65.4, 90.6, 122.5, 146.6, 143.7, 225.0, 409.9, 732.5],
+    labelAt: { 0: "30", 4: "91", 8: "225", 9: "410", 10: "730E" },
+    estIndex: 10
+  };
+  var quarters = ["Q1 25", "Q2 25", "Q3 25", "Q4 25", "Q1 26", "Q2 26"];
+  var hyper = [
+    { name: "Microsoft", slot: "--g1", vals: [21.4, 24.2, 34.9, 37.5, 31.9, 41.0] },
+    { name: "Amazon",    slot: "--g2", vals: [24.3, 31.4, 34.2, 38.5, 44.2, 53.1] },
+    { name: "Alphabet",  slot: "--g3", vals: [17.2, 22.4, 24.0, 27.9, 35.7, 44.9] },
+    { name: "Meta",      slot: "--g4", vals: [13.7, 17.0, 19.4, 22.1, 19.8, 31.1] }
+  ];
+  var guidance = [
+    { name: "Amazon",    first: 200,   current: 220,   note: "raised Jul 26 (+$20B, memory costs)" },
+    { name: "Alphabet",  first: 180,   current: 200,   note: "raised twice; now $195–205B" },
+    { name: "Microsoft", first: 190,   current: 175,   note: "accounting restatement, not a cut" },
+    { name: "Meta",      first: 125,   current: 137.5, note: "now $130–145B; floor raised twice" }
+  ];
+  var nvda = { labels: ["FQ1 26", "FQ2 26", "FQ3 26", "FQ4 26", "FQ1 27"], vals: [39.1, 41.1, 51.2, 62.3, 75.2], est: [] };
+  var avgo = { labels: ["FQ4 25", "FQ1 26", "FQ2 26", "FQ3 26E"], vals: [6.5, 8.4, 10.8, 16.0], est: [3] };
+  var neoQuarters = ["Q3 25", "Q4 25", "Q1 26", "Q2 26"];
+  var neoclouds = [
+    { name: "CoreWeave", hatch: false, vals: [3.3, 4.1, 7.7, 6.4] },
+    { name: "Nebius",    hatch: true,  vals: [1.0, 2.1, 2.5, 5.7] }
+  ];
+  var semicapex = [
+    { name: "Samsung (capex + R&D)", val: 73 },
+    { name: "TSMC ($60–64B)", val: 62 },
+    { name: "SK Hynix (new fabs, multi-yr)", val: 38 },
+    { name: "Micron (FY26)", val: 27 }
+  ];
+  var projects = [
+    { name: "Stargate — OpenAI/Oracle/SoftBank", val: 500, firm: true,  sub: "7 US sites · >9 GW by 2029" },
+    { name: "Nvidia–OpenAI Piketon, OH",         val: 500, firm: false, sub: "in talks · 10 GW · incl. ~$350B chips" },
+    { name: "Meta Hyperion, LA",                 val: 50,  firm: true,  sub: "5 GW campus" },
+    { name: "Anthropic US program",              val: 50,  firm: true,  sub: "w/ Fluidstack · TX + NY" },
+    { name: "xAI Southaven, MS",                 val: 20,  firm: true,  sub: "~2 GW" },
+    { name: "xAI Colossus, Memphis",             val: 18,  firm: true,  sub: "~2 GW · 555k+ GPUs" },
+    { name: "Amazon Project Rainier, IN",        val: 11,  firm: true,  sub: "complete · ~500k Trainium2" },
+    { name: "Microsoft Fairwater, WI",           val: 7.3, firm: true,  sub: "live 2026" }
+  ];
+
+  // ---------- helpers ----------
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(SVGNS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function txt(parent, x, y, str, size, fill, anchor, weight, opts) {
+    var t = el("text", { x: x, y: y, "font-size": size, fill: fill, "text-anchor": anchor || "start" }, parent);
+    if (weight) t.setAttribute("font-weight", weight);
+    if (opts && opts.mono) t.setAttribute("class", "n");
+    if (opts && opts.upper) {
+      t.setAttribute("letter-spacing", "0.08em");
+      str = String(str).toUpperCase();
+    }
+    t.textContent = str;
+    return t;
+  }
+  function hatchPattern(svg) {
+    patternCount++;
+    var id = "hatch" + patternCount;
+    var defs = el("defs", {}, svg);
+    var p = el("pattern", { id: id, patternUnits: "userSpaceOnUse", width: 5, height: 5, patternTransform: "rotate(45)" }, defs);
+    el("line", { x1: 0, y1: 0, x2: 0, y2: 5, stroke: css("--ink"), "stroke-width": 1.2 }, p);
+    return "url(#" + id + ")";
+  }
+  function showTip(evt, title, rows) {
+    tooltip.innerHTML = "";
+    var t = document.createElement("div");
+    t.className = "t-title";
+    t.textContent = title;
+    tooltip.appendChild(t);
+    rows.forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "t-row";
+      if (r.color) {
+        var key = document.createElement("span");
+        key.className = "t-key";
+        key.style.background = r.color;
+        row.appendChild(key);
+      }
+      var name = document.createElement("span");
+      name.className = "t-name";
+      name.textContent = r.name;
+      row.appendChild(name);
+      var val = document.createElement("span");
+      val.className = "t-val";
+      val.textContent = r.val;
+      row.appendChild(val);
+      tooltip.appendChild(row);
+    });
+    tooltip.style.display = "block";
+    moveTip(evt);
+  }
+  function moveTip(evt) {
+    var pad = 14;
+    var w = tooltip.offsetWidth, h = tooltip.offsetHeight;
+    var x = evt.clientX + pad, y = evt.clientY + pad;
+    if (x + w > window.innerWidth - 8) x = evt.clientX - w - pad;
+    if (y + h > window.innerHeight - 8) y = evt.clientY - h - pad;
+    tooltip.style.left = x + "px";
+    tooltip.style.top = y + "px";
+  }
+  function hideTip() { tooltip.style.display = "none"; }
+
+  // ---------- 0. decade line ----------
+  function renderDecade() {
+    var mount = document.getElementById("chart-decade");
+    mount.innerHTML = "";
+    var W = 1140, H = 380, padL = 52, padR = 64, padT = 34, padB = 34;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Line chart of combined big-4 hyperscaler annual capex, 2016 to 2026 estimated" });
+    mount.appendChild(svg);
+    var ink3 = css("--ink-3"), rule = css("--rule"), ink = css("--ink"), bg = css("--bg");
+    var maxV = 800;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var xScale = function (i) { return padL + (i / (decadeYears.length - 1)) * plotW; };
+    var yScale = function (v) { return padT + plotH - (v / maxV) * plotH; };
+    [0, 200, 400, 600, 800].forEach(function (v) {
+      var y = yScale(v);
+      el("line", { x1: padL, x2: W - padR, y1: y, y2: y, stroke: v === 0 ? ink : rule, "stroke-width": 1 }, svg);
+      txt(svg, padL - 10, y + 4, v === 0 ? "0" : v, 11, ink3, "end", null, { mono: true });
+    });
+    var solidPts = [], estIdx = decade.estIndex;
+    decade.totals.forEach(function (v, i) {
+      if (i <= estIdx - 1) solidPts.push(xScale(i) + "," + yScale(v));
+    });
+    el("polyline", { points: solidPts.join(" "), fill: "none", stroke: ink, "stroke-width": 1.5, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    el("line", {
+      x1: xScale(estIdx - 1), y1: yScale(decade.totals[estIdx - 1]),
+      x2: xScale(estIdx), y2: yScale(decade.totals[estIdx]),
+      stroke: ink, "stroke-width": 1.5, "stroke-dasharray": "4 4", "stroke-linecap": "round"
+    }, svg);
+    decade.totals.forEach(function (v, i) {
+      var x = xScale(i), y = yScale(v);
+      if (i === estIdx) {
+        el("circle", { cx: x, cy: y, r: 4.5, fill: bg, stroke: ink, "stroke-width": 1.5 }, svg);
+      } else {
+        el("circle", { cx: x, cy: y, r: 3.5, fill: ink, stroke: bg, "stroke-width": 2 }, svg);
+      }
+      if (decade.labelAt[i] !== undefined) {
+        txt(svg, x, y - 12, decade.labelAt[i], 13, ink, "middle", 700, { mono: true });
+      }
+      txt(svg, x, H - 10, decadeYears[i], 10.5, ink3, "middle", 600, { upper: true });
+    });
+    // crosshair hit targets
+    var half = plotW / (decadeYears.length - 1) / 2;
+    var cross = el("line", { x1: 0, x2: 0, y1: padT, y2: padT + plotH, stroke: ink3, "stroke-width": 1, opacity: 0 }, svg);
+    decadeYears.forEach(function (yr, i) {
+      var hit = el("rect", { x: xScale(i) - half, y: padT, width: half * 2, height: plotH, fill: "transparent" }, svg);
+      var rows = [{ name: "Total", val: decade.totals[i].toFixed(1) }];
+      decade.companies.forEach(function (c) {
+        rows.push({ name: c.name, val: c.vals[i].toFixed(1) });
+      });
+      hit.addEventListener("pointermove", function (e) {
+        cross.setAttribute("x1", xScale(i));
+        cross.setAttribute("x2", xScale(i));
+        cross.setAttribute("opacity", 1);
+        showTip(e, yr + " capex, $B" + (i === estIdx ? " (guidance)" : ""), rows);
+      });
+      hit.addEventListener("pointerleave", function () {
+        cross.setAttribute("opacity", 0);
+        hideTip();
+      });
+    });
+    // table view
+    var tbl = document.getElementById("table-decade");
+    tbl.innerHTML = "";
+    var thead = document.createElement("tr");
+    ["Year"].concat(decade.companies.map(function (c) { return c.name; })).concat(["Total"]).forEach(function (h) {
+      var th = document.createElement("th");
+      th.textContent = h;
+      thead.appendChild(th);
+    });
+    tbl.appendChild(thead);
+    decadeYears.forEach(function (yr, i) {
+      var tr = document.createElement("tr");
+      var td0 = document.createElement("td");
+      td0.textContent = yr;
+      tr.appendChild(td0);
+      decade.companies.forEach(function (c) {
+        var td = document.createElement("td");
+        td.textContent = c.vals[i].toFixed(1);
+        tr.appendChild(td);
+      });
+      var tdT = document.createElement("td");
+      tdT.textContent = decade.totals[i].toFixed(1);
+      tr.appendChild(tdT);
+      tbl.appendChild(tr);
+    });
+  }
+
+  // ---------- 1. stacked bar ----------
+  function renderStack() {
+    var mount = document.getElementById("chart-stack");
+    mount.innerHTML = "";
+    var W = 1140, H = 360, padL = 52, padR = 14, padT = 28, padB = 32;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Stacked bar chart of big-4 hyperscaler quarterly capex" });
+    mount.appendChild(svg);
+    var ink3 = css("--ink-3"), rule = css("--rule"), ink = css("--ink");
+    var totals = quarters.map(function (_, qi) {
+      return hyper.reduce(function (s, h) { return s + h.vals[qi]; }, 0);
+    });
+    var maxV = 180;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var yScale = function (v) { return padT + plotH - (v / maxV) * plotH; };
+    [0, 50, 100, 150].forEach(function (v) {
+      var y = yScale(v);
+      el("line", { x1: padL, x2: W - padR, y1: y, y2: y, stroke: v === 0 ? ink : rule, "stroke-width": 1 }, svg);
+      txt(svg, padL - 10, y + 4, v === 0 ? "0" : v, 11, ink3, "end", null, { mono: true });
+    });
+    var slot = plotW / quarters.length;
+    var barW = Math.min(64, slot * 0.42);
+    quarters.forEach(function (q, qi) {
+      var x = padL + slot * qi + (slot - barW) / 2;
+      var yCursor = padT + plotH;
+      hyper.forEach(function (h, hi) {
+        var hgt = (h.vals[qi] / maxV) * plotH;
+        var gap = hi === hyper.length - 1 ? 0 : 2;
+        var segTop = yCursor - hgt;
+        el("rect", { x: x, y: segTop, width: barW, height: Math.max(hgt - gap, 0.5), fill: css(h.slot) }, svg);
+        yCursor = segTop;
+      });
+      txt(svg, x + barW / 2, yScale(totals[qi]) - 9, totals[qi].toFixed(0), 13, ink, "middle", 700, { mono: true });
+      txt(svg, x + barW / 2, H - 10, q, 11, ink3, "middle", 600, { upper: true });
+      var hit = el("rect", { x: padL + slot * qi, y: padT, width: slot, height: plotH, fill: "transparent" }, svg);
+      var rows = hyper.slice().reverse().map(function (h) {
+        return { name: h.name, val: h.vals[qi].toFixed(1), color: css(h.slot) };
+      });
+      rows.push({ name: "Total", val: totals[qi].toFixed(1) });
+      hit.addEventListener("pointermove", function (e) { showTip(e, q + " capex, $B", rows); });
+      hit.addEventListener("pointerleave", hideTip);
+    });
+    var lg = document.getElementById("legend-stack");
+    lg.innerHTML = "";
+    hyper.forEach(function (h) {
+      var li = document.createElement("span");
+      li.className = "li";
+      var sw = document.createElement("span");
+      sw.className = "sw";
+      sw.style.background = css(h.slot);
+      li.appendChild(sw);
+      li.appendChild(document.createTextNode(h.name));
+      lg.appendChild(li);
+    });
+    var tbl = document.getElementById("table-stack");
+    tbl.innerHTML = "";
+    var thead = document.createElement("tr");
+    ["Quarter"].concat(hyper.map(function (h) { return h.name; })).concat(["Total"]).forEach(function (h) {
+      var th = document.createElement("th");
+      th.textContent = h;
+      thead.appendChild(th);
+    });
+    tbl.appendChild(thead);
+    quarters.forEach(function (q, qi) {
+      var tr = document.createElement("tr");
+      var td0 = document.createElement("td");
+      td0.textContent = q;
+      tr.appendChild(td0);
+      hyper.forEach(function (h) {
+        var td = document.createElement("td");
+        td.textContent = h.vals[qi].toFixed(1);
+        tr.appendChild(td);
+      });
+      var tdT = document.createElement("td");
+      tdT.textContent = totals[qi].toFixed(1);
+      tr.appendChild(tdT);
+      tbl.appendChild(tr);
+    });
+  }
+
+  // ---------- 2. dumbbell ----------
+  function renderDumbbell() {
+    var mount = document.getElementById("chart-dumbbell");
+    mount.innerHTML = "";
+    var W = 1140, rowH = 56, padL = 100, padR = 70, padT = 14, padB = 30;
+    var H = padT + padB + rowH * guidance.length;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Dumbbell chart of 2026 capex guidance changes" });
+    mount.appendChild(svg);
+    var ink3 = css("--ink-3"), rule = css("--rule"), ink = css("--ink"), ink2 = css("--ink-2"), bg = css("--bg");
+    var minV = 100, maxV = 240;
+    var plotW = W - padL - padR;
+    var xScale = function (v) { return padL + ((v - minV) / (maxV - minV)) * plotW; };
+    [100, 150, 200].forEach(function (v) {
+      var x = xScale(v);
+      el("line", { x1: x, x2: x, y1: padT, y2: H - padB, stroke: rule, "stroke-width": 1 }, svg);
+      txt(svg, x, H - 8, v, 11, ink3, "middle", null, { mono: true });
+    });
+    guidance.forEach(function (g, i) {
+      var y = padT + rowH * i + rowH / 2;
+      txt(svg, padL - 16, y + 4, g.name, 11, ink2, "end", 600, { upper: true });
+      var x1 = xScale(g.first), x2 = xScale(g.current);
+      el("line", { x1: x1, x2: x2, y1: y, y2: y, stroke: ink, "stroke-width": 1 }, svg);
+      el("circle", { cx: x1, cy: y, r: 5.5, fill: bg, stroke: ink, "stroke-width": 1 }, svg);
+      el("circle", { cx: x2, cy: y, r: 6, fill: ink }, svg);
+      var lblLeft = x1 < x2;
+      txt(svg, x1 + (lblLeft ? -14 : 14), y + 4, g.first, 12, ink3, lblLeft ? "end" : "start", null, { mono: true });
+      txt(svg, x2 + (lblLeft ? 14 : -14), y + 4, (g.current % 1 ? g.current.toFixed(1) : g.current), 13, ink, lblLeft ? "start" : "end", 700, { mono: true });
+      var hit = el("rect", { x: 0, y: padT + rowH * i, width: W, height: rowH, fill: "transparent" }, svg);
+      hit.addEventListener("pointermove", function (e) {
+        showTip(e, g.name + " — 2026 capex guide, $B", [
+          { name: "First guide", val: g.first },
+          { name: "Current", val: g.current },
+          { name: g.note, val: "" }
+        ]);
+      });
+      hit.addEventListener("pointerleave", hideTip);
+    });
+  }
+
+  // ---------- 3. single-series columns ----------
+  function renderColumns(mountId, data, maxV, ticks) {
+    var mount = document.getElementById(mountId);
+    mount.innerHTML = "";
+    var W = 560, H = 280, padL = 42, padR = 10, padT = 26, padB = 30;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img" });
+    mount.appendChild(svg);
+    var hatch = hatchPattern(svg);
+    var ink3 = css("--ink-3"), rule = css("--rule"), ink = css("--ink");
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var yScale = function (v) { return padT + plotH - (v / maxV) * plotH; };
+    ticks.forEach(function (v) {
+      var y = yScale(v);
+      el("line", { x1: padL, x2: W - padR, y1: y, y2: y, stroke: v === 0 ? ink : rule, "stroke-width": 1 }, svg);
+      txt(svg, padL - 8, y + 4, v === 0 ? "0" : v, 10.5, ink3, "end", null, { mono: true });
+    });
+    var slot = plotW / data.vals.length;
+    var barW = Math.min(30, slot * 0.5);
+    data.vals.forEach(function (v, i) {
+      var x = padL + slot * i + (slot - barW) / 2;
+      var y = yScale(v);
+      var isEst = data.est.indexOf(i) !== -1;
+      var r = el("rect", { x: x, y: y, width: barW, height: padT + plotH - y, fill: isEst ? hatch : ink }, svg);
+      if (isEst) r.setAttribute("stroke", ink), r.setAttribute("stroke-width", 1);
+      if (i === data.vals.length - 1) txt(svg, x + barW / 2, y - 8, v.toFixed(1), 12, ink, "middle", 700, { mono: true });
+      txt(svg, x + barW / 2, H - 9, data.labels[i], 10, ink3, "middle", 600, { upper: true });
+      var hit = el("rect", { x: padL + slot * i, y: padT, width: slot, height: plotH, fill: "transparent" }, svg);
+      hit.addEventListener("pointermove", function (e) {
+        showTip(e, data.labels[i], [{ name: isEst ? "$B (guidance)" : "$B", val: v.toFixed(1) }]);
+      });
+      hit.addEventListener("pointerleave", hideTip);
+    });
+  }
+
+  // ---------- 3b. grouped columns ----------
+  function renderGrouped(mountId, labels, series, maxV, ticks, tableId) {
+    var mount = document.getElementById(mountId);
+    mount.innerHTML = "";
+    var W = 1140, H = 300, padL = 46, padR = 14, padT = 26, padB = 30;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Grouped column chart" });
+    mount.appendChild(svg);
+    var hatch = hatchPattern(svg);
+    var ink3 = css("--ink-3"), rule = css("--rule"), ink = css("--ink");
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var yScale = function (v) { return padT + plotH - (v / maxV) * plotH; };
+    ticks.forEach(function (v) {
+      var y = yScale(v);
+      el("line", { x1: padL, x2: W - padR, y1: y, y2: y, stroke: v === 0 ? ink : rule, "stroke-width": 1 }, svg);
+      txt(svg, padL - 10, y + 4, v === 0 ? "0" : v, 11, ink3, "end", null, { mono: true });
+    });
+    var slot = plotW / labels.length;
+    var barW = Math.min(30, slot * 0.16);
+    labels.forEach(function (q, qi) {
+      var groupW = series.length * barW + (series.length - 1) * 3;
+      var x0 = padL + slot * qi + (slot - groupW) / 2;
+      series.forEach(function (s, si) {
+        var v = s.vals[qi];
+        var x = x0 + si * (barW + 3);
+        var y = yScale(v);
+        var r = el("rect", { x: x, y: y, width: barW, height: padT + plotH - y, fill: s.hatch ? hatch : ink }, svg);
+        if (s.hatch) r.setAttribute("stroke", ink), r.setAttribute("stroke-width", 1);
+        if (qi === labels.length - 1) txt(svg, x + barW / 2, y - 8, v.toFixed(1), 12, ink, "middle", 700, { mono: true });
+      });
+      txt(svg, padL + slot * qi + slot / 2, H - 10, q, 11, ink3, "middle", 600, { upper: true });
+      var hit = el("rect", { x: padL + slot * qi, y: padT, width: slot, height: plotH, fill: "transparent" }, svg);
+      var rows = series.map(function (s) {
+        return { name: s.name, val: s.vals[qi].toFixed(1) };
+      });
+      hit.addEventListener("pointermove", function (e) { showTip(e, q + " capex, $B", rows); });
+      hit.addEventListener("pointerleave", hideTip);
+    });
+    if (tableId) {
+      var tbl = document.getElementById(tableId);
+      tbl.innerHTML = "";
+      var thead = document.createElement("tr");
+      ["Quarter"].concat(series.map(function (s) { return s.name; })).forEach(function (h) {
+        var th = document.createElement("th");
+        th.textContent = h;
+        thead.appendChild(th);
+      });
+      tbl.appendChild(thead);
+      labels.forEach(function (q, qi) {
+        var tr = document.createElement("tr");
+        var td0 = document.createElement("td");
+        td0.textContent = q;
+        tr.appendChild(td0);
+        series.forEach(function (s) {
+          var td = document.createElement("td");
+          td.textContent = s.vals[qi].toFixed(1);
+          tr.appendChild(td);
+        });
+        tbl.appendChild(tr);
+      });
+    }
+  }
+
+  // ---------- 4. horizontal bars ----------
+  function renderHBars(mountId, items, maxV, tipTitle, useFirmHatch) {
+    var mount = document.getElementById(mountId);
+    mount.innerHTML = "";
+    var rowH = 44, padL = 260, padR = 80, padT = 8, padB = 8;
+    var W = 1140;
+    var H = padT + padB + rowH * items.length;
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img" });
+    mount.appendChild(svg);
+    var hatch = hatchPattern(svg);
+    var ink = css("--ink"), ink2 = css("--ink-2");
+    var plotW = W - padL - padR;
+    // baseline
+    el("line", { x1: padL, x2: padL, y1: padT, y2: H - padB, stroke: ink, "stroke-width": 1 }, svg);
+    items.forEach(function (it, i) {
+      var y = padT + rowH * i + rowH / 2;
+      var w = Math.max((it.val / maxV) * plotW, 3);
+      var barH = 18;
+      txt(svg, padL - 16, y + 4, it.name, 12.5, ink2, "end");
+      var inTalks = useFirmHatch && it.firm === false;
+      var r = el("rect", { x: padL, y: y - barH / 2, width: w, height: barH, fill: inTalks ? hatch : ink }, svg);
+      if (inTalks) r.setAttribute("stroke", ink), r.setAttribute("stroke-width", 1);
+      txt(svg, padL + w + 12, y + 4, it.val, 12.5, ink, "start", 700, { mono: true });
+      var hit = el("rect", { x: 0, y: padT + rowH * i, width: W, height: rowH, fill: "transparent" }, svg);
+      hit.addEventListener("pointermove", function (e) {
+        var rows = [{ name: tipTitle + ", $B", val: it.val }];
+        if (it.sub) rows.push({ name: it.sub, val: "" });
+        showTip(e, it.name, rows);
+      });
+      hit.addEventListener("pointerleave", hideTip);
+    });
+  }
+
+  function hatchSwatch(id) {
+    var sw = document.getElementById(id);
+    if (!sw) return;
+    sw.innerHTML = "";
+    sw.style.border = "1px solid " + css("--ink");
+    sw.style.background = "repeating-linear-gradient(45deg, transparent, transparent 2.5px, " + css("--ink") + " 2.5px, " + css("--ink") + " 3.5px)";
+    sw.style.width = "12px"; sw.style.height = "12px"; sw.style.display = "inline-block";
+  }
+
+  function renderAll() {
+    patternCount = 0;
+    renderDecade();
+    renderStack();
+    renderDumbbell();
+    renderColumns("chart-nvda", nvda, 80, [0, 20, 40, 60, 80]);
+    renderColumns("chart-avgo", avgo, 20, [0, 5, 10, 15, 20]);
+    renderGrouped("chart-neocloud", neoQuarters, neoclouds, 10, [0, 2.5, 5, 7.5, 10], "table-neocloud");
+    renderHBars("chart-semicapex", semicapex, 80, "2026 budget", false);
+    renderHBars("chart-projects", projects, 550, "Announced commitment", true);
+    hatchSwatch("sw-hatch");
+    hatchSwatch("sw-hatch2");
+  }
+  renderAll();
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+  }
+})();
+</script>
+</body>
+</html>
